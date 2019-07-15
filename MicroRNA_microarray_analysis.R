@@ -193,6 +193,7 @@ design.mat$sample.levels <- str_replace_all(design.mat$sample.levels,"__","_")
 
 
 my.design <- model.matrix(~0 + sample.levels, design.mat)
+
 colnames(my.design) <- c("at_risk", "healthy_serum", "Liver_cancer", "mammary_tumor")
 colnames(my.design)
 rownames(my.design) <- design.mat$sample.levels
@@ -204,17 +205,32 @@ my.fit <- lmFit(dat, my.design)
 write.table(my.fit$coefficients, file=paste0("results/",my.gse,"_Limma_Coeff.txt"), sep="\t", quote=F)
 
 
+
+# saved here,everything up until this line is okay**
+
 # make contrast groups
-my.contrasts <- makeContrasts(HSvLC = healthy_serum - Liver_cancer, HSvMT= healthy_serum - mammary_tumor, levels = my.design)
-
-my.design
-# when we do this the second time we will mkae the distinction between at risk individuals with no camcer and strictly healthy individuals
-# this will allow us to show in the PCA, dendograms and the heatmas the differences between the two or show similarities for validation of grouping
-
-
-# fitting
+my.contrasts <- makeContrasts(HSvLC = healthy_serum - Liver_cancer, HSvMT= healthy_serum - mammary_tumor, 
+                              HSvAR = healthy_serum - at_risk, levels = my.design)
 
 contrast.fits <- sapply(colnames(my.contrasts), function(x)(contrasts.fit(my.fit, contrasts=my.contrasts[, x])))
+length(contrast.fits)
+
+colnames(contrast.fits)
+
+contrast.fits
+
+
+# Bayes work: in this sction we will test the true differences in expression by contructing a bayesian network. These tests are
+# used in favor of multiple ttests to correct for multiple testing. We will use an adjusted proportion of 5% of the genes expected
+# expected to be DE. For larger studies I will reduce this to a proportion of 1% to reduce the FDR.
+
+
+
+mr.bayes <- eBayes(my.fit, proportion=0.01, stdev.coef.lim=c(0.1,4), trend=FALSE, robust=FALSE, winsor.tail.p=c(0.05,0.1))
+contrast.tts <- lapply(mr.bayes, function(x)(topTable(x, adjust="BH", number=length(x$coefficients), sort.by="none")))
+
+
+
 
 
 
@@ -224,6 +240,212 @@ contrast.fits <- sapply(colnames(my.contrasts), function(x)(contrasts.fit(my.fit
 contrast.ebs <- lapply(contrast.fits, function(x)(eBayes(x, proportion=0.1, trend=FALSE, robust=FALSE)))
 contrast.tts <- lapply(contrast.ebs, function(x)(topTable(x, adjust="BH", number=length(x$coefficients), sort.by="none")))
 contrast.tests <- lapply(contrast.ebs, function(x)(decideTests(x, method="separate", adjust.method="BH", p.value=0.05, lfc=0)))
+
+
+
+
+
+
+
+# Visualization 
+
+# generate plots(heatmap,PCA, Volcano) for all of the sequencings results for each cancer type.
+library(EnhancedVolcano)
+library(pheatmap)
+library(EnhancedVolcano)
+
+
+res <- data.table::fread("DE_Liver_vs_healthy.txt", header = TRUE)
+
+  # volcano
+  
+EnhancedVolcano(res,
+                lab = res$ID,
+                x = 'logFC',
+                y = 'P.Value',
+                xlim = c(-8, 8),
+                title = 'Liver Cancer vs. Healthy Controls',
+                pCutoff = 0.05,
+                FCcutoff = .5,
+                transcriptPointSize = 1.5,
+                transcriptLabSize = 3.0)
+  
+res <- data.table::fread("DE_mammary_vs_healthy.txt", header = TRUE)
+
+# volcano
+
+EnhancedVolcano(res,
+                lab = res$ID,
+                x = 'logFC',
+                y = 'P.Value',
+                xlim = c(-8, 8),
+                title = 'Mammary Cancer vs. Healthy Controls',
+                pCutoff = 0.05,
+                FCcutoff = .5,
+                transcriptPointSize = 1.5,
+                transcriptLabSize = 3.0)
+
+res <- data.table::fread("DE_at_risk_vs_healthy.txt", header = TRUE)
+
+# volcano
+
+EnhancedVolcano(res,
+                lab = res$ID,
+                x = 'logFC',
+                y = 'P.Value',
+                xlim = c(-8, 8),
+                title = 'At Risk vs. Healthy Controls',
+                pCutoff = 0.05,
+                FCcutoff = .5,
+                transcriptPointSize = 1.5,
+                transcriptLabSize = 3.0)
+
+
+res <- data.table::fread("DE_Liver_vs_at_risk.txt", header = TRUE)
+
+# volcano
+
+EnhancedVolcano(res,
+                lab = res$ID,
+                x = 'logFC',
+                y = 'P.Value',
+                xlim = c(-8, 8),
+                title = 'Liver cancer vs. At risk',
+                pCutoff = 0.05,
+                FCcutoff = .5,
+                transcriptPointSize = 1.5,
+                transcriptLabSize = 3.0)
+
+res <- data.table::fread("DE_Mammary_vs_at_risk.txt", header = TRUE)
+
+# volcano
+
+EnhancedVolcano(res,
+                lab = res$ID,
+                x = 'logFC',
+                y = 'P.Value',
+                xlim = c(-8, 8),
+                title = 'Mammary cancer vs. At risk',
+                pCutoff = 0.05,
+                FCcutoff = .5,
+                transcriptPointSize = 1.5,
+                transcriptLabSize = 3.0)
+
+res <- data.table::fread("DE_Liver_vs_Mammary.txt", header = TRUE)
+
+# volcano
+
+EnhancedVolcano(res,
+                lab = res$ID,
+                x = 'logFC',
+                y = 'P.Value',
+                xlim = c(-8, 8),
+                title = 'Liver cancer vs. Mammary cancer',
+                pCutoff = 0.05,
+                FCcutoff = .5,
+                transcriptPointSize = 1.5,
+                transcriptLabSize = 3.0)
+
+# Gene associations drug interactions and disease drivers
+# in this section we will use the multiMIR package to investigate the 
+# gene interactions of DE microRNAs. Further we will use this data as 
+# input data into enriched pathway investigation
+
+BiocManager::install("multiMiR")
+library(multiMiR)
+library(edgeR)
+
+# No significantly DE in this section
+res <- data.table::fread("DE_Liver_vs_healthy.txt", header = TRUE)
+res <- res[res$adj.P.Val < 0.05,]
+res <- res$miRNA_ID
+
+multimir_results <- get_multimir(org     = 'mmu',
+                                 mirna   = res,
+                                 table   = 'validated',
+                                 summary = TRUE)
+
+res <- data.table::fread("DE_mammary_vs_healthy.txt", header = TRUE)
+res <- res[res$adj.P.Val < 0.05,]
+res <- res$miRNA_ID
+
+multimir_results <- get_multimir(org     = 'mmu',
+                                 mirna   = res,
+                                 table   = 'validated',
+                                 summary = TRUE)
+Mammary_vs_Healthy_DE_microRNAs<- multimir_results@data
+
+write.csv(Mammary_vs_Healthy_DE_microRNAs, file = "Mammary_vs_Healthy_DE_microRNAs.csv")
+
+###################
+res <- data.table::fread("DE_Mammary_vs_at_risk.txt", header = TRUE)
+res <- res[res$adj.P.Val < 0.05,]
+res <- res$miRNA_ID
+
+multimir_results <- get_multimir(org     = 'mmu',
+                                 mirna   = res,
+                                 table   = 'validated',
+                                 summary = TRUE)
+dat<- multimir_results@data
+
+write.csv(dat, file = "Mammary_vs_at_risk_DE_microRNAs.csv")
+
+###################
+# no sigDE
+res <- data.table::fread("DE_Liver_vs_Mammary.txt", header = TRUE)
+res <- res[res$adj.P.Val < 0.05,]
+res <- res$miRNA_ID
+
+multimir_results <- get_multimir(org     = 'mmu',
+                                 mirna   = res,
+                                 table   = 'validated',
+                                 summary = TRUE)
+dat<- multimir_results@data
+
+write.csv(dat, file = "Mammary_vs_Liver_DE_microRNAs.csv")
+
+###################
+res <- data.table::fread("DE_Liver_vs_at_risk.txt", header = TRUE)
+res <- res[res$adj.P.Val < 0.05,]
+res <- res$miRNA_ID
+
+multimir_results <- get_multimir(org     = 'mmu',
+                                 mirna   = res,
+                                 table   = 'validated',
+                                 summary = TRUE)
+dat<- multimir_results@data
+
+write.csv(dat, file = "Liver_vs_at_risk_DE_microRNAs.csv")
+
+###################
+res <- data.table::fread("DE_at_risk_vs_healthy.txt", header = TRUE)
+res <- res[res$adj.P.Val < 0.05,]
+res <- res$miRNA_ID
+
+multimir_results <- get_multimir(org     = 'mmu',
+                                 mirna   = res,
+                                 table   = 'validated',
+                                 summary = TRUE)
+dat<- multimir_results@data
+
+write.csv(dat, file = "at_risk_vs_healthy_DE_microRNAs.csv")
+
+
+# Ranked data by the pval and fold change, left join by the enriched 
+# microRNAs in the multmir data s3 object. 
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
