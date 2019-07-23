@@ -351,11 +351,11 @@ EnhancedVolcano(res,
 # gene interactions of DE microRNAs. Further we will use this data as 
 # input data into enriched pathway investigation
 
-BiocManager::install("multiMiR")
+#BiocManager::install("multiMiR")
 library(multiMiR)
 library(edgeR)
 
-# No significantly DE in this section
+# # No significantly DE in this section
 res <- data.table::fread("DE_Liver_vs_healthy.txt", header = TRUE)
 res <- res[res$adj.P.Val < 0.05,]
 res <- res$miRNA_ID
@@ -365,9 +365,13 @@ multimir_results <- get_multimir(org     = 'mmu',
                                  table   = 'validated',
                                  summary = TRUE)
 
+# no join in this section. # No significantly DE in this section
+
+# #################
+# # done
 res <- data.table::fread("DE_mammary_vs_healthy.txt", header = TRUE)
 res <- res[res$adj.P.Val < 0.05,]
-res <- res$miRNA_ID
+#res <- res$miRNA_ID
 
 multimir_results <- get_multimir(org     = 'mmu',
                                  mirna   = res,
@@ -375,9 +379,18 @@ multimir_results <- get_multimir(org     = 'mmu',
                                  summary = TRUE)
 Mammary_vs_Healthy_DE_microRNAs<- multimir_results@data
 
+colnames(Mammary_vs_Healthy_DE_microRNAs)
+
+Mammary_vs_Healthy_DE_microRNAs <- left_join(
+  x = Mammary_vs_Healthy_DE_microRNAs,
+  y = res,
+  by = c("mature_mirna_id" = "miRNA_ID")
+)
+
 write.csv(Mammary_vs_Healthy_DE_microRNAs, file = "Mammary_vs_Healthy_DE_microRNAs.csv")
 
 ###################
+# # no join in this section. # No significantly DE in this section
 res <- data.table::fread("DE_Mammary_vs_at_risk.txt", header = TRUE)
 res <- res[res$adj.P.Val < 0.05,]
 res <- res$miRNA_ID
@@ -388,21 +401,30 @@ multimir_results <- get_multimir(org     = 'mmu',
                                  summary = TRUE)
 dat<- multimir_results@data
 
+dat <- left_join(
+  x = dat,
+  y = res,
+  by = c("mature_mirna_id" = "miRNA_ID")
+)
+
+
+
 write.csv(dat, file = "Mammary_vs_at_risk_DE_microRNAs.csv")
 
 ###################
 # no sigDE
-res <- data.table::fread("DE_Liver_vs_Mammary.txt", header = TRUE)
-res <- res[res$adj.P.Val < 0.05,]
-res <- res$miRNA_ID
-
-multimir_results <- get_multimir(org     = 'mmu',
-                                 mirna   = res,
-                                 table   = 'validated',
-                                 summary = TRUE)
-dat<- multimir_results@data
-
-write.csv(dat, file = "Mammary_vs_Liver_DE_microRNAs.csv")
+# no join in this section. # No significantly DE in this section
+# res <- data.table::fread("DE_Liver_vs_Mammary.txt", header = TRUE)
+# res <- res[res$adj.P.Val < 0.05,]
+# res <- res$miRNA_ID
+#
+# multimir_results <- get_multimir(org     = 'mmu',
+#                                  mirna   = res,
+#                                  table   = 'validated',
+#                                  summary = TRUE)
+# dat<- multimir_results@data
+#
+# write.csv(dat, file = "Mammary_vs_Liver_DE_microRNAs.csv")
 
 ###################
 res <- data.table::fread("DE_Liver_vs_at_risk.txt", header = TRUE)
@@ -414,6 +436,13 @@ multimir_results <- get_multimir(org     = 'mmu',
                                  table   = 'validated',
                                  summary = TRUE)
 dat<- multimir_results@data
+
+dat <- left_join(
+  x = dat, 
+  y = res,
+  by = c("mature_mirna_id" = "miRNA_ID")
+)
+
 
 write.csv(dat, file = "Liver_vs_at_risk_DE_microRNAs.csv")
 
@@ -428,24 +457,281 @@ multimir_results <- get_multimir(org     = 'mmu',
                                  summary = TRUE)
 dat<- multimir_results@data
 
+dat <- left_join(
+  x = dat, 
+  y = res,
+  by = c("mature_mirna_id" = "miRNA_ID")
+)
+
+
+
+
+
 write.csv(dat, file = "at_risk_vs_healthy_DE_microRNAs.csv")
 
 
 # Ranked data by the pval and fold change, left join by the enriched 
 # microRNAs in the multmir data s3 object. 
 
+# use the candidate microRNAs to construct GSEA relying on pval and predicted target gene sets 
+# we will use cluster profiler here
+
+
+library(clusterProfiler)
+library(org.Mm.eg.db)
+library(msigdbr)
+library(DOSE)
+# in this section we will use the the clusterprofiler package to provide enriched pathway information
+# in an effort to reduce our candidates
+
+dat <- data.table::fread("Mammary_vs_Healthy_DE_microRNAs.csv", header = TRUE, stringsAsFactors = FALSE)
+dat$V1 <- NULL
+
+
+egoMF<- enrichGO(gene = dat$target_symbol, OrgDb = org.Mm.eg.db , keyType = "SYMBOL", ont = "MF", pAdjustMethod = "BH")
+egoBP<- enrichGO(gene = dat$target_symbol, OrgDb = org.Mm.eg.db , keyType = "SYMBOL", ont = "BP", pAdjustMethod = "BH")
+egoCC<- enrichGO(gene = dat$target_symbol, OrgDb = org.Mm.eg.db , keyType = "SYMBOL", ont = "CC", pAdjustMethod = "BH")
+
+egoMF <- simplify(egoMF)
+#egoBP <- simplify(egoBP)
+egoCC <- simplify(egoCC)
+
+#save res
+write.csv(egoMF@result, "Dysregulated_pathways_molecular_functions_Mammary_vs_healthy.csv")
+write.csv(egoBP@result, "Dysregulated_pathways_biological_functions_Mammary_vs_healthy.csv")
+write.csv(egoCC@result, "Dysregulated_pathways_cellular_compartments_Mammary_vs_healthy.csv")
+
+
+p1 <- enrichplot::dotplot(egoMF, x = "Count", showCategory =40, title = "Mammary tumors vs. Healthy controls")
+p <- clusterProfiler::dotplot(egoBP, showCategory =20)
+p <- clusterProfiler::dotplot(egoCC, showCategory =20)
+
+heatplot(egoMF, foldChange=2^(dat$logFC))
+
+
+# library(DOSE)
+# data(geneList)
+# dat.foo <- names(geneList)[abs(geneList) > 2]
+# dat.foo.MF <- enrichGO(dat.foo, org.Hs.eg.db, keyType = "ENTREZID", ont = "MF", pAdjustMethod = "BH")
+# clusterProfiler::cnetplot(dat.foo.MF, showCategory = 20)
+# # as the CNE plot is simply another version of the upsetplot according to the document vignette,
+# # this object should be in the proper input form for the upsetplot, correct?
+# upsetplot(dat.foo.MF)
+
+# compare to TCGA data to find similar expression signatures in our mammary tumors 
+
+# subset BRCA patients to ones over expressing ENPP2, then subset their expression to only 
+# the microRNAs in the human microNOME. use differenital expression analysis to investigte 
+# up and downregulated pathways in these patients. finally compare them to the autotaxin mice.
+
+# :)
+
+library(DESeq2)
+library(EnhancedVolcano)
+library(clusterProfiler)
+library(org.Hs.eg.db)
+library(WGCNA)
 
 
 
 
+projects <- c("TCGA-BLCA","TCGA-BRCA","TCGA-COAD","TCGA-ESCA","TCGA-HNSC","TCGA-KICH","TCGA-KIRC","TCGA-KIRP","TCGA-LIHC","TCGA-LUAD","TCGA-LUSC","TCGA-PRAD","TCGA-STAD","TCGA-THCA")
+
+#annot <- data.table::fread("~/CSBL_shared/ID_mapping/Ensembl_symbol_entrez.csv")
+
+clinical <- data.table::fread(
+  "~/CSBL_shared/RNASeq/TCGA/annotation/counts_annotation.csv")
+normal.samples <- clinical[sample_type == "Solid Tissue Normal"]
+tumor.samples <- clinical[sample_type != "Solid Tissue Normal"]
+#tumor.samples <- tumor.samples[tumor.samples$caseID %in% normal.samples$caseID,]
+
+
+proj <- projects[2]
+
+df.exp <- data.table::fread(str_glue("~/CSBL_shared/RNASeq/TCGA/counts/{proj}.counts.csv")) %>%
+  as_tibble() %>%
+  column_to_rownames(var = "Ensembl")
+
+coldata.t <- tumor.samples[tumor.samples$project == proj,]
+coldata.n <- normal.samples[normal.samples$project == proj,]
+
+
+# subset the samples to breast cancer tumor and normals
+
+df.exp.t <- df.exp %>%
+  dplyr::select(coldata.t$barcode)
+
+df.exp.n <- df.exp %>%
+  dplyr::select(coldata.n$barcode)
+
+# subset to ones that have significantly higher expression
+# of the ENPP2 compared to normals, note:: should be about 25%
+# of the cohort
+
+# maybe not?
+
+rownames(df.exp.t) <- substr(rownames(df.exp.t), 1,15)
+rownames(df.exp.n) <- substr(rownames(df.exp.n), 1,15)
+
+ENPP2 <- "ENSG00000136960"
+
+df.exp.t.ENPP2 <- df.exp.t[rownames(df.exp.t) == ENPP2,]
+df.exp.n.ENPP2 <- df.exp.n[rownames(df.exp.n) == ENPP2,]
+
+df.exp.t.ENPP2 <- as.data.frame(t(df.exp.t.ENPP2))
+df.exp.n.ENPP2 <- as.data.frame(t(df.exp.n.ENPP2))
+
+df.exp.t.ENPP2 <- df.exp.t.ENPP2 %>%
+  rownames_to_column("barcode")
+
+df.exp.n.ENPP2 <- df.exp.n.ENPP2 %>%
+  rownames_to_column("barcode")
+
+normcutoff<- summary(df.exp.n.ENPP2$ENSG00000136960)
+
+# subset the data for only those that are significantly greater than the mean
+
+df.exp.t.ENPP2 <- df.exp.t.ENPP2 %>%
+  filter(ENSG00000136960 > normcutoff[2] )
+
+
+# convert the microRNAs to the ENSEMBL gene IDs (2655 uniq) using bioMaRt
+
+library(biomaRt)
+HSA_microRNAs <- data.table::fread("HSA_microRNAs.txt", header = FALSE)
+colnames(HSA_microRNAs) <- "microRNAs"
+ensembl = useMart("ensembl", dataset = "hsapiens_gene_ensembl")
+converts<- getBM(attributes = c("mirbase_id","ensembl_gene_id"), filters = "mirbase_id", values = HSA_microRNAs$microRNAs ,mart = ensembl)
+
+
+# subset the expression of the patients to the microRNAs
+
+df.exp.t <- df.exp.t %>%
+  dplyr::select(df.exp.t.ENPP2$barcode)
+
+df.exp.t <- df.exp.t[rownames(df.exp.t) %in% converts$ensembl_gene_id,]
+
+
+df.exp.n <- df.exp.n %>%
+  dplyr::select(df.exp.n.ENPP2$barcode)
+
+df.exp.n <- df.exp.n[rownames(df.exp.n) %in% converts$ensembl_gene_id,]
+
+
+# conduct Differential expression of the microRNAs in the autotaxin tumors vs the healthy patients
+
+df.exp.f <- cbind(df.exp.n, df.exp.t)
+
+coldata.t <- coldata.t[coldata.t$barcode %in% colnames(df.exp.t),]
+coldata.n <- coldata.n[coldata.n$barcode %in% colnames(df.exp.n),]
+
+
+coldata <- rbind(coldata.n, coldata.t)
+rownames(coldata) <- coldata$barcode
+
+# df.exp <- df.exp[ ,colnames(df.exp) %in% coldata$barcode]
+
+coldata$sample_type <- gsub(" ", "_", x = coldata$sample_type)
+
+
+dds <- DESeqDataSetFromMatrix(countData = df.exp.f, colData = coldata, design = ~ sample_type)
+
+keep <- rowSums(counts(dds)) >= 10
+dds <- dds[keep,]
+
+
+dds$sample_type <- relevel(dds$sample_type, ref = "Solid_Tissue_Normal")
+
+
+dds <- DESeq(dds)
+res <- results(dds)
+resOrdered <- res[order(res$pvalue),]
+resOrdered <- as.data.frame(resOrdered)
+res <- as.data.frame(res)
+
+resOrdered <- resOrdered[complete.cases(resOrdered), ]
+
+resOrdered <- as.data.frame(resOrdered) %>%
+  rownames_to_column("Ensembl")
+
+write.csv(resOrdered, file = str_glue("~/storage/Metastatic_Organo_Tropism/microRNA_characterization/Differential_expression_RT-PCR_exiqon_micrRNA_microarray/{proj}_microRNA_DE.csv"))
+
+
+# find the enriched gene regulations in the population
+
+View(resOrdered)
+
+resOrdered <- resOrdered[resOrdered$padj <= 1.0e-4,]
+
+resOrdered.miRNA <- left_join(
+  x = resOrdered, 
+  y = converts,
+  by = c("Ensembl" = "ensembl_gene_id")
+)
+
+multimir_results <- get_multimir(org     = 'hsa',
+                                 mirna   = resOrdered.miRNA$mirbase_id,
+                                 table   = 'validated',
+                                 summary = TRUE)
+miRNA.dat<- multimir_results@data
+
+# miRNA.dat.final <- left_join(
+#   x = miRNA.dat, 
+#   y = resOrdered.miRNA,
+#   by = c("mature_mirna_id" = "mirbase_id")
+#   
+#   
+# )
+
+# use cluster profiler to show the enriched pathways in the autaxin enriched patients
+
+library(org.Hs.eg.db)
+resOrdered <- resOrdered[resOrdered$padj <= 1.0e-4,]  
+
+egoMF<- enrichGO(gene = miRNA.dat$target_ensembl, OrgDb = org.Hs.eg.db , keyType = "ENSEMBL", ont = "MF", pAdjustMethod = "BH")
+egoBP<- enrichGO(gene = miRNA.dat$target_ensembl, OrgDb = org.Hs.eg.db , keyType = "ENSEMBL", ont = "BP", pAdjustMethod = "BH")
+egoCC<- enrichGO(gene = miRNA.dat$target_ensembl, OrgDb = org.Hs.eg.db , keyType = "ENSEMBL", ont = "CC", pAdjustMethod = "BH")
+
+egoMF <- simplify(egoMF)
+egoBP <- simplify(egoBP)
+egoCC <- simplify(egoCC)
+
+#save res
+write.csv(egoMF@result, "Dysregulated_pathways_molecular_functions_BRCA_vs_Normal.csv")
+write.csv(egoBP@result, "Dysregulated_pathways_biological_functions_BRCA_vs_Normal.csv")
+write.csv(egoCC@result, "Dysregulated_pathways_cellular_compartments_BRCA_vs_Normal.csv")
 
 
 
 
+p2 <- enrichplot::dotplot(egoMF, x = "Count", showCategory =40, title = "TCGA-BRCA_vs_Normal")
+p <- clusterProfiler::dotplot(egoBP, showCategory =20)
+p <- clusterProfiler::dotplot(egoCC, showCategory =20)
 
 
 
 
+# venn diagram describing enriched pathways
+
+# library(VennDiagram)
+# 
+# TCGA_BRCA <- data.table::fread("Dysregulated_pathways_molecular_functions_BRCA_vs_Normal.csv", header = TRUE)
+# ATXN_Mammary_tumors <- data.table::fread("Dysregulated_pathways_molecular_functions_Mammary_vs_healthy.csv", header = TRUE)
+# 
+# TCGA_BRCA <- TCGA_BRCA[TCGA_BRCA$pvalue <= 0.05,]
+# ATXN_Mammary_tumors <- ATXN_Mammary_tumors[ATXN_Mammary_tumors$pvalue <= 0.05,]
+# 
+# TCGA_BRCA <- TCGA_BRCA$Description
+# ATXN_Mammary_tumors <- ATXN_Mammary_tumors$Description
+# 
+# x <- list(TCGA_BRCA = TCGA_BRCA, ATXN_Mammary_tumors = ATXN_Mammary_tumors)
+# 
+# 
+# v0 <- venn.diagram( x, filename=NULL,
+#                     fill = c("red", "blue"), 
+#                     alpha = 0.50,col = "transparent")
+# 
+# grid.draw(v0)
 
 
 
